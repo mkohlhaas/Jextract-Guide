@@ -50,7 +50,7 @@ public class Point {
         return x$LAYOUT;
     }
 
-    private static final long x$OFFSET = 0;
+    private static final long x$OFFSET = $LAYOUT.byteOffset(groupElement("x"));
 
     /**
      * Offset for field:
@@ -94,7 +94,7 @@ public class Point {
         return y$LAYOUT;
     }
 
-    private static final long y$OFFSET = 4;
+    private static final long y$OFFSET = $LAYOUT.byteOffset(groupElement("y"));
 
     /**
      * Offset for field:

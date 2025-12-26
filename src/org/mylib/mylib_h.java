@@ -12,62 +12,17 @@ import java.util.stream.*;
 import static java.lang.foreign.ValueLayout.*;
 import static java.lang.foreign.MemoryLayout.PathElement.*;
 
-public class mylib_h {
+public class mylib_h extends mylib_h$shared {
 
     mylib_h() {
         // Should not be called directly
     }
 
     static final Arena LIBRARY_ARENA = Arena.ofAuto();
-    static final boolean TRACE_DOWNCALLS = Boolean.getBoolean("jextract.trace.downcalls");
-
-    static void traceDowncall(String name, Object... args) {
-         String traceArgs = Arrays.stream(args)
-                       .map(Object::toString)
-                       .collect(Collectors.joining(", "));
-         System.out.printf("%s(%s)\n", name, traceArgs);
-    }
-
-    static MemorySegment findOrThrow(String symbol) {
-        return SYMBOL_LOOKUP.find(symbol)
-            .orElseThrow(() -> new UnsatisfiedLinkError("unresolved symbol: " + symbol));
-    }
-
-    static MethodHandle upcallHandle(Class<?> fi, String name, FunctionDescriptor fdesc) {
-        try {
-            return MethodHandles.lookup().findVirtual(fi, name, fdesc.toMethodType());
-        } catch (ReflectiveOperationException ex) {
-            throw new AssertionError(ex);
-        }
-    }
-
-    static MemoryLayout align(MemoryLayout layout, long align) {
-        return switch (layout) {
-            case PaddingLayout p -> p;
-            case ValueLayout v -> v.withByteAlignment(align);
-            case GroupLayout g -> {
-                MemoryLayout[] alignedMembers = g.memberLayouts().stream()
-                        .map(m -> align(m, align)).toArray(MemoryLayout[]::new);
-                yield g instanceof StructLayout ?
-                        MemoryLayout.structLayout(alignedMembers) : MemoryLayout.unionLayout(alignedMembers);
-            }
-            case SequenceLayout s -> MemoryLayout.sequenceLayout(s.elementCount(), align(s.elementLayout(), align));
-        };
-    }
 
     static final SymbolLookup SYMBOL_LOOKUP = SymbolLookup.loaderLookup()
             .or(Linker.nativeLinker().defaultLookup());
 
-    public static final ValueLayout.OfBoolean C_BOOL = ValueLayout.JAVA_BOOLEAN;
-    public static final ValueLayout.OfByte C_CHAR = ValueLayout.JAVA_BYTE;
-    public static final ValueLayout.OfShort C_SHORT = ValueLayout.JAVA_SHORT;
-    public static final ValueLayout.OfInt C_INT = ValueLayout.JAVA_INT;
-    public static final ValueLayout.OfLong C_LONG_LONG = ValueLayout.JAVA_LONG;
-    public static final ValueLayout.OfFloat C_FLOAT = ValueLayout.JAVA_FLOAT;
-    public static final ValueLayout.OfDouble C_DOUBLE = ValueLayout.JAVA_DOUBLE;
-    public static final AddressLayout C_POINTER = ValueLayout.ADDRESS
-            .withTargetLayout(MemoryLayout.sequenceLayout(java.lang.Long.MAX_VALUE, JAVA_BYTE));
-    public static final ValueLayout.OfLong C_LONG = ValueLayout.JAVA_LONG;
     private static final int MY_MACRO = (int)42L;
     /**
      * {@snippet lang=c :
@@ -78,13 +33,12 @@ public class mylib_h {
         return MY_MACRO;
     }
 
-    private static class call_me_back {
-        public static final FunctionDescriptor DESC = FunctionDescriptor.of(
-            mylib_h.C_INT,
-            mylib_h.C_POINTER
+    private static class foo {
+        public static final FunctionDescriptor DESC = FunctionDescriptor.ofVoid(
+            mylib_h.C_INT
         );
 
-        public static final MemorySegment ADDR = mylib_h.findOrThrow("call_me_back");
+        public static final MemorySegment ADDR = SYMBOL_LOOKUP.findOrThrow("foo");
 
         public static final MethodHandle HANDLE = Linker.nativeLinker().downcallHandle(ADDR, DESC);
     }
@@ -92,45 +46,47 @@ public class mylib_h {
     /**
      * Function descriptor for:
      * {@snippet lang=c :
-     * int call_me_back(callback_t callback)
+     * void foo(int x)
      * }
      */
-    public static FunctionDescriptor call_me_back$descriptor() {
-        return call_me_back.DESC;
+    public static FunctionDescriptor foo$descriptor() {
+        return foo.DESC;
     }
 
     /**
      * Downcall method handle for:
      * {@snippet lang=c :
-     * int call_me_back(callback_t callback)
+     * void foo(int x)
      * }
      */
-    public static MethodHandle call_me_back$handle() {
-        return call_me_back.HANDLE;
+    public static MethodHandle foo$handle() {
+        return foo.HANDLE;
     }
 
     /**
      * Address for:
      * {@snippet lang=c :
-     * int call_me_back(callback_t callback)
+     * void foo(int x)
      * }
      */
-    public static MemorySegment call_me_back$address() {
-        return call_me_back.ADDR;
+    public static MemorySegment foo$address() {
+        return foo.ADDR;
     }
 
     /**
      * {@snippet lang=c :
-     * int call_me_back(callback_t callback)
+     * void foo(int x)
      * }
      */
-    public static int call_me_back(MemorySegment callback) {
-        var mh$ = call_me_back.HANDLE;
+    public static void foo(int x) {
+        var mh$ = foo.HANDLE;
         try {
             if (TRACE_DOWNCALLS) {
-                traceDowncall("call_me_back", callback);
+                traceDowncall("foo", x);
             }
-            return (int)mh$.invokeExact(callback);
+            mh$.invokeExact(x);
+        } catch (Error | RuntimeException ex) {
+           throw ex;
         } catch (Throwable ex$) {
            throw new AssertionError("should not reach here", ex$);
         }
@@ -138,7 +94,7 @@ public class mylib_h {
 
     private static class bar$constants {
         public static final OfInt LAYOUT = mylib_h.C_INT;
-        public static final MemorySegment SEGMENT = mylib_h.findOrThrow("bar").reinterpret(LAYOUT.byteSize());
+        public static final MemorySegment SEGMENT = SYMBOL_LOOKUP.findOrThrow("bar").reinterpret(LAYOUT.byteSize());
     }
 
     /**
@@ -208,174 +164,149 @@ public class mylib_h {
         return C;
     }
 
-    private static class new_point {
-        public static final FunctionDescriptor DESC = FunctionDescriptor.of(
-            mylib_h.C_POINTER    );
-
-        public static final MemorySegment ADDR = mylib_h.findOrThrow("new_point");
-
-        public static final MethodHandle HANDLE = Linker.nativeLinker().downcallHandle(ADDR, DESC);
-    }
-
     /**
-     * Function descriptor for:
+     * Variadic invoker class for:
      * {@snippet lang=c :
-     * struct Point *new_point()
+     * void foo_variadic(int x, ...)
      * }
      */
-    public static FunctionDescriptor new_point$descriptor() {
-        return new_point.DESC;
-    }
+    public static class foo_variadic {
+        private static final FunctionDescriptor BASE_DESC = FunctionDescriptor.ofVoid(
+                mylib_h.C_INT
+            );
+        private static final MemorySegment ADDR = SYMBOL_LOOKUP.findOrThrow("foo_variadic");
 
-    /**
-     * Downcall method handle for:
-     * {@snippet lang=c :
-     * struct Point *new_point()
-     * }
-     */
-    public static MethodHandle new_point$handle() {
-        return new_point.HANDLE;
-    }
+        private final MethodHandle handle;
+        private final FunctionDescriptor descriptor;
+        private final MethodHandle spreader;
 
-    /**
-     * Address for:
-     * {@snippet lang=c :
-     * struct Point *new_point()
-     * }
-     */
-    public static MemorySegment new_point$address() {
-        return new_point.ADDR;
-    }
+        private foo_variadic(MethodHandle handle, FunctionDescriptor descriptor, MethodHandle spreader) {
+            this.handle = handle;
+            this.descriptor = descriptor;
+            this.spreader = spreader;
+        }
 
-    /**
-     * {@snippet lang=c :
-     * struct Point *new_point()
-     * }
-     */
-    public static MemorySegment new_point() {
-        var mh$ = new_point.HANDLE;
-        try {
-            if (TRACE_DOWNCALLS) {
-                traceDowncall("new_point");
+        /**
+         * Variadic invoker factory for:
+         * {@snippet lang=c :
+         * void foo_variadic(int x, ...)
+         * }
+         */
+        public static foo_variadic makeInvoker(MemoryLayout... layouts) {
+            FunctionDescriptor desc$ = BASE_DESC.appendArgumentLayouts(layouts);
+            Linker.Option fva$ = Linker.Option.firstVariadicArg(BASE_DESC.argumentLayouts().size());
+            var mh$ = Linker.nativeLinker().downcallHandle(ADDR, desc$, fva$);
+            var spreader$ = mh$.asSpreader(Object[].class, layouts.length);
+            return new foo_variadic(mh$, desc$, spreader$);
+        }
+
+        /**
+         * {@return the address}
+         */
+        public static MemorySegment address() {
+            return ADDR;
+        }
+
+        /**
+         * {@return the specialized method handle}
+         */
+        public MethodHandle handle() {
+            return handle;
+        }
+
+        /**
+         * {@return the specialized descriptor}
+         */
+        public FunctionDescriptor descriptor() {
+            return descriptor;
+        }
+
+        public void apply(int x, Object... x1) {
+            try {
+                if (TRACE_DOWNCALLS) {
+                    traceDowncall("foo_variadic", x, x1);
+                }
+                 spreader.invokeExact(x, x1);
+            } catch(IllegalArgumentException | ClassCastException ex$)  {
+                throw ex$; // rethrow IAE from passing wrong number/type of args
+            } catch (Throwable ex$) {
+               throw new AssertionError("should not reach here", ex$);
             }
-            return (MemorySegment)mh$.invokeExact();
-        } catch (Throwable ex$) {
-           throw new AssertionError("should not reach here", ex$);
         }
     }
+    /**
+     * {@snippet lang=c :
+     * typedef int MyInt
+     * }
+     */
+    public static final OfInt MyInt = mylib_h.C_INT;
 
-    private static class delete_point {
-        public static final FunctionDescriptor DESC = FunctionDescriptor.ofVoid(
-            mylib_h.C_POINTER
-        );
+    private static class FOO_ARRAY$constants {
+        public static final SequenceLayout LAYOUT = MemoryLayout.sequenceLayout(3, MemoryLayout.sequenceLayout(5, mylib_h.C_INT));
+        public static final MemorySegment SEGMENT = SYMBOL_LOOKUP.findOrThrow("FOO_ARRAY").reinterpret(LAYOUT.byteSize());
+    public static final VarHandle HANDLE = LAYOUT.varHandle(sequenceElement(), sequenceElement());
 
-        public static final MemorySegment ADDR = mylib_h.findOrThrow("delete_point");
-
-        public static final MethodHandle HANDLE = Linker.nativeLinker().downcallHandle(ADDR, DESC);
+        public static final long[] DIMS = { 3, 5 };
     }
 
     /**
-     * Function descriptor for:
+     * Layout for variable:
      * {@snippet lang=c :
-     * void delete_point(struct Point *ptr)
+     * int FOO_ARRAY[3][5]
      * }
      */
-    public static FunctionDescriptor delete_point$descriptor() {
-        return delete_point.DESC;
+    public static SequenceLayout FOO_ARRAY$layout() {
+        return FOO_ARRAY$constants.LAYOUT;
     }
 
     /**
-     * Downcall method handle for:
+     * Dimensions for array variable:
      * {@snippet lang=c :
-     * void delete_point(struct Point *ptr)
+     * int FOO_ARRAY[3][5]
      * }
      */
-    public static MethodHandle delete_point$handle() {
-        return delete_point.HANDLE;
+    public static long[] FOO_ARRAY$dimensions() {
+        return FOO_ARRAY$constants.DIMS;
     }
 
     /**
-     * Address for:
+     * Getter for variable:
      * {@snippet lang=c :
-     * void delete_point(struct Point *ptr)
+     * int FOO_ARRAY[3][5]
      * }
      */
-    public static MemorySegment delete_point$address() {
-        return delete_point.ADDR;
+    public static MemorySegment FOO_ARRAY() {
+        return FOO_ARRAY$constants.SEGMENT;
     }
 
     /**
+     * Setter for variable:
      * {@snippet lang=c :
-     * void delete_point(struct Point *ptr)
+     * int FOO_ARRAY[3][5]
      * }
      */
-    public static void delete_point(MemorySegment ptr) {
-        var mh$ = delete_point.HANDLE;
-        try {
-            if (TRACE_DOWNCALLS) {
-                traceDowncall("delete_point", ptr);
-            }
-            mh$.invokeExact(ptr);
-        } catch (Throwable ex$) {
-           throw new AssertionError("should not reach here", ex$);
-        }
-    }
-
-    private static class foo {
-        public static final FunctionDescriptor DESC = FunctionDescriptor.ofVoid(
-            mylib_h.C_INT
-        );
-
-        public static final MemorySegment ADDR = mylib_h.findOrThrow("foo");
-
-        public static final MethodHandle HANDLE = Linker.nativeLinker().downcallHandle(ADDR, DESC);
+    public static void FOO_ARRAY(MemorySegment varValue) {
+        MemorySegment.copy(varValue, 0L, FOO_ARRAY$constants.SEGMENT, 0L, FOO_ARRAY$constants.LAYOUT.byteSize());
     }
 
     /**
-     * Function descriptor for:
+     * Indexed getter for variable:
      * {@snippet lang=c :
-     * void foo(int x)
+     * int FOO_ARRAY[3][5]
      * }
      */
-    public static FunctionDescriptor foo$descriptor() {
-        return foo.DESC;
+    public static int FOO_ARRAY(long index0, long index1) {
+        return (int)FOO_ARRAY$constants.HANDLE.get(FOO_ARRAY$constants.SEGMENT, 0L, index0, index1);
     }
 
     /**
-     * Downcall method handle for:
+     * Indexed setter for variable:
      * {@snippet lang=c :
-     * void foo(int x)
+     * int FOO_ARRAY[3][5]
      * }
      */
-    public static MethodHandle foo$handle() {
-        return foo.HANDLE;
-    }
-
-    /**
-     * Address for:
-     * {@snippet lang=c :
-     * void foo(int x)
-     * }
-     */
-    public static MemorySegment foo$address() {
-        return foo.ADDR;
-    }
-
-    /**
-     * {@snippet lang=c :
-     * void foo(int x)
-     * }
-     */
-    public static void foo(int x) {
-        var mh$ = foo.HANDLE;
-        try {
-            if (TRACE_DOWNCALLS) {
-                traceDowncall("foo", x);
-            }
-            mh$.invokeExact(x);
-        } catch (Throwable ex$) {
-           throw new AssertionError("should not reach here", ex$);
-        }
+    public static void FOO_ARRAY(long index0, long index1, int varValue) {
+        FOO_ARRAY$constants.HANDLE.set(FOO_ARRAY$constants.SEGMENT, 0L, index0, index1, varValue);
     }
 }
 

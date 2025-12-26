@@ -17,9 +17,9 @@ import static java.lang.foreign.MemoryLayout.PathElement.*;
  * typedef int (*callback_t)(int, int)
  * }
  */
-public class callback_t {
+public final class callback_t {
 
-    callback_t() {
+    private callback_t() {
         // Should not be called directly
     }
 
@@ -58,9 +58,11 @@ public class callback_t {
     /**
      * Invoke the upcall stub {@code funcPtr}, with given parameters
      */
-    public static int invoke(MemorySegment funcPtr,int x, int y) {
+    public static int invoke(MemorySegment funcPtr, int x, int y) {
         try {
             return (int) DOWN$MH.invokeExact(funcPtr, x, y);
+        } catch (Error | RuntimeException ex) {
+            throw ex;
         } catch (Throwable ex$) {
             throw new AssertionError("should not reach here", ex$);
         }
